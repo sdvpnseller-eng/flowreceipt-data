@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlowReceipt — GitHub Cloud Auto Save</title>
+
+<style>
+body{
+  margin:0;
+  font-family:system-ui;
+  background:linear-gradient(180deg,#062a14,#06140b);
+  color:#eafff2;
+}
+header{
+  padding:14px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  background:rgba(0,0,0,.35);
+  position:sticky;
+  top:0;
+}
+button{
+  background:#1ecf7a;
+  border:none;
+  color:#022;
+  padding:8px 14px;
+  border-radius:20px;
+  font-weight:700;
+  cursor:pointer;
+}
+button.secondary{background:#ffd36a}
+section{padding:14px}
+input,select{
+  width:100%;
+  padding:10px;
+  margin-top:6px;
+  border-radius:12px;
+  border:none;
+}
+.card{
+  background:rgba(255,255,255,.07);
+  padding:14px;
+  border-radius:16px;
+  margin-bottom:12px;
+}
+.small{font-size:12px;opacity:.8}
+.list div{margin-top:6px}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div>
+    <b>FlowReceipt</b><br>
+    <span class="small">GitHub JSON Cloud + Auto Save</span>
+  </div>
+  <div>
+    <button onclick="cloudLoad()">Cloud Load</button>
+    <button class="secondary" onclick="cloudSave()">Cloud Save</button>
+  </div>
+</header>
+
+<section>
+
+<div class="card">
+  <b>Add Client</b>
+  <input id="cName" placeholder="Client name">
+  <button onclick="addClient()">Add Client</button>
+</div>
+
+<div class="card">
+  <b>Add Job</b>
+  <select id="jClient"></select>
+  <input id="jTitle" placeholder="Job title">
+  <input id="jPrice" type="number" placeholder="Price">
+  <button onclick="addJob()">Add Job</button>
+</div>
+
+<div class="card">
+  <b>Receive Payment</b>
+  <select id="pJob"></select>
+  <input id="pAmount" type="number" placeholder="Paid amount">
+  <button onclick="addPayment()">Create Receipt</button>
+</div>
+
+<div class="card">
+  <b>Receipts</b>
+  <div class="list" id="receiptList"></div>
+</div>
+
+</section>
+
+<script>
+/* ================= CONFIG ================= */
+const GITHUB_USER="sdvpnseller-eng";
+const DATA_REPO="flowreceipt-data";
+const DATA_FILE="data.json";
+const BRANCH="main";
+
+/* ================ STORAGE ================ */
+let db={clients:[],jobs:[],payments:[],receipts:[]};
+let GITHUB_TOKEN=null;
+
+/* ================ HELPERS ================= */
+const uid=()=>Math.random().toString(16).slice(2)+Date.now();
+const saveLocal=()=>localStorage.setItem("flow_local",JSON.stringify(db));
+const loadLocal=()=>{const d=localStorage.getItem("flow_local"); if(d) db=JSON.parse(d);};
+
+/* ================ CLOUD =================== */
+async function cloudLoad(){
+  const url=`https://raw.githubusercontent.com/${GITHUB_USER}/${DATA_REPO}/${BRANCH}/${DATA_FILE}`;
+  const r=await fetch(url,{cache:"no-store"});
+  db=await r.json();
+  saveLocal();
+  render();
+  alert("Cloud Load done ✅");
+}
+
+async function cloudSave(){
+  if(!GITHUB_TOKEN){
+    GITHUB_TOKEN=prompt("GitHub Token দিন");
+    if(!GITHUB_TOKEN) return;
+  }
+  const api=`https://api.github.com/repos/${GITHUB_USER}/${DATA_REPO}/contents/${DATA_FILE}`;
+  const r1=await fetch(api,{headers:{Authorization:`token ${GITHUB_TOKEN}`}});
+  const j1=await r1.json();
+  const sha=j1.sha;
+
+  const content=btoa(unescape(encodeURIComponent(JSON.stringify(db,null,2))));
+  await fetch(api,{
+    method:"PUT",
+    headers:{
+      Authorization:`token ${GITHUB_TOKEN}`,
+      "Content-Type":"application/json"
+    },
+    body:JSON.stringify({
+      message:"Auto save data",
+      content,
+      sha,
+      branch:BRANCH
+    })
+  });
+  console.log("Auto cloud saved");
+}
+
+/* ============== AUTO SAVE ================ */
+function autoSave(){
+  saveLocal();
+  cloudSave();
+}
+
+/* ============== APP LOGIC ================ */
+function addClient(){
+  const name=cName.value.trim();
+  if(!name) return;
+  db.clients.push({id:uid(),name});
+  cName.value="";
+  autoSave();
+  render();
+}
+
+function addJob(){
+  db.jobs.push({
+    id:uid(),
+    clientId:jClient.value,
+    title:jTitle.value,
+    price:Number(jPrice.value)
+  });
+  jTitle.value=""; jPrice.value="";
+  autoSave();
+  render();
+}
+
+function addPayment(){
+  const job=db.jobs.find(j=>j.id===pJob.value);
+  const amt=Number(pAmount.value);
+  db.payments.push({id:uid(),jobId:job.id,amount:amt});
+  db.receipts.push({id:uid(),job:job.title,amount:amt});
+  pAmount.value="";
+  autoSave();
+  render();
+}
+
+/* ============== RENDER =================== */
+function render(){
+  jClient.innerHTML=db.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
+  pJob.innerHTML=db.jobs.map(j=>`<option value="${j.id}">${j.title}</option>`).join("");
+  receiptList.innerHTML=db.receipts.map(r=>`<div>✔ ${r.job} — ৳${r.amount}</div>`).join("");
+}
+
+loadLocal();
+render();
+</script>
+
+</body>
+</html>
